@@ -48,14 +48,60 @@ jobs:
       run: |
         docker-compose build
 
-  deploy-to-ec2:
+  deploy-testing:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    # Deploy to testing on any branch push or pull request
+    if: always() && needs.build-and-test.result == 'success'
 
     steps:
-    - name: Deploy to EC2
-      run: |
-        echo "This is where deployment commands to EC2 instances would go."
-        echo "Example:"
-        echo "ssh -i my-key.pem ec2-user@<ec2-ip> 'cd /var/www/app && git pull && docker-compose up -d'"
+    - uses: actions/checkout@v3
+
+    - name: Copy repository contents via scp
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.EC2_HOST_TESTING }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "."
+        target: "~/app"
+
+    - name: Deploy to Testing EC2
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST_TESTING }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          cd ~/app
+          docker-compose down
+          docker-compose up -d --build
+
+  deploy-staging:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    # Deploy to staging only on push to main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Copy repository contents via scp
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.EC2_HOST_STAGING }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "."
+        target: "~/app"
+
+    - name: Deploy to Staging EC2
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST_STAGING }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          cd ~/app
+          docker-compose down
+          docker-compose up -d --build
